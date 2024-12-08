@@ -3,7 +3,6 @@ import mediapipe as mp
 import numpy as np
 from collections import deque
 import tkinter as tk
-from tkinter import ttk
 from PIL import Image, ImageTk
 import threading
 import time
@@ -37,66 +36,48 @@ canvas = tk.Canvas(left_panel, bg='black')
 canvas.pack(fill=tk.BOTH, expand=True)
 
 # Right panel (menu)
-right_panel = tk.Frame(main_container, bg='#1E1E1E', width=300)
+right_panel = tk.Frame(main_container, bg='#1E1E1E', width=250)
 right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, padx=10, pady=10)
 
 # Menu title
 menu_label = tk.Label(right_panel, text="Menu", font=('Arial', 14, 'bold'), bg='#1E1E1E', fg='white')
 menu_label.pack(pady=10)
 
-# Scrollable canvas for menu items
-menu_canvas = tk.Canvas(right_panel, bg='#1E1E1E')
-menu_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-# Scrollbars
-v_scrollbar = tk.Scrollbar(right_panel, orient=tk.VERTICAL, command=menu_canvas.yview)
-v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-h_scrollbar = tk.Scrollbar(right_panel, orient=tk.HORIZONTAL, command=menu_canvas.xview)
-h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
-
-menu_canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
-
-# Frame inside the canvas
-menu_inner_frame = tk.Frame(menu_canvas, bg='#1E1E1E')
-
-# Function to update scroll region
-def on_frame_configure(event):
-    menu_canvas.configure(scrollregion=menu_canvas.bbox("all"))
-
-menu_inner_frame.bind("<Configure>", on_frame_configure)
-
-# Add the inner frame to the canvas
-menu_canvas.create_window((0, 0), window=menu_inner_frame, anchor='nw')
+# Grid frame for menu items
+menu_frame = tk.Frame(right_panel, bg='#1E1E1E')
+menu_frame.pack(fill=tk.X, pady=10)
 
 # Menu items
 menu_items = []
 menu_texts = [
     ["Item 1", "Item 2"],
-    ["Item 3", "Item 4"]
+    ["Item 3", "Item 4"],
+    ["Item 5", "Item 6"],
+    ["Item 7", "Item 8"],
+    ["Item 9", "Item 10"],
+    ["Item 11", "Item 12"]
 ]
 current_row = 0
 current_col = 0
 
-# Place menu items in a grid inside the inner frame
+# Place menu items in a grid
 for i, row in enumerate(menu_texts):
     row_items = []
     for j, text in enumerate(row):
-        btn = tk.Label(menu_inner_frame, text=text, font=('Arial', 24),  # Increased font size for demonstration
-                      bg='#2C2C2C', fg='white', pady=50, padx=100)        # Increased padding for demonstration
-        btn.grid(row=i, column=j, padx=2, pady=2, sticky='nsew')
+        btn = tk.Label(menu_frame, text=text, font=('Arial', 12),
+                      bg='#2C2C2C', fg='white', pady=10, padx=20)
+        btn.grid(row=i, column=j, padx=2, pady=2, sticky='ew')
         row_items.append(btn)
     menu_items.append(row_items)
 
-# Make columns and rows equally wide and tall
-for i in range(len(menu_texts)):
-    menu_inner_frame.grid_rowconfigure(i, weight=1)
-for j in range(len(menu_texts[0])):
-    menu_inner_frame.grid_columnconfigure(j, weight=1)
+# Make columns equally wide
+menu_frame.grid_columnconfigure(0, weight=1)
+menu_frame.grid_columnconfigure(1, weight=1)
 
 # Gesture information
 gesture_label = tk.Label(right_panel, text="No Gesture", font=('Arial', 12),
                         bg='#1E1E1E', fg='white', wraplength=180)
-gesture_label.pack(pady=10)
+gesture_label.pack(pady=20)
 
 # Variables to hold the last detected gesture
 last_gesture = "No Gesture"
@@ -139,28 +120,28 @@ def detect_swipe_left(history):
         return False
     x1, _ = history[0]
     x2, _ = history[-1]
-    return x2 < x1 - 0.05  # Adjusted sensitivity
+    return x2 < x1 - 0.2
 
 def detect_swipe_right(history):
     if len(history) < 2:
         return False
     x1, _ = history[0]
     x2, _ = history[-1]
-    return x2 > x1 + 0.05  # Adjusted sensitivity
+    return x2 > x1 + 0.2
 
 def detect_swipe_up(history):
     if len(history) < 2:
         return False
     _, y1 = history[0]
     _, y2 = history[-1]
-    return y2 < y1 - 0.05  # Adjusted sensitivity
+    return y2 < y1 - 0.2
 
 def detect_swipe_down(history):
     if len(history) < 2:
         return False
     _, y1 = history[0]
     _, y2 = history[-1]
-    return y2 > y1 + 0.05  # Adjusted sensitivity
+    return y2 > y1 + 0.2
 
 def detect_thumbs_up(landmarks):
     """Detect Thumbs Up gesture"""
@@ -217,16 +198,20 @@ def update_frame():
                 elif detect_open_palm(landmarks):
                     if detect_swipe_left(position_history):
                         gesture_detected = "Swipe Left"
-                        menu_canvas.xview_scroll(-1, "units")
+                        current_col = max(0, current_col - 1)
+                        highlight_item(current_row, current_col)
                     elif detect_swipe_right(position_history):
                         gesture_detected = "Swipe Right"
-                        menu_canvas.xview_scroll(1, "units")
+                        current_col = min(len(menu_items[0]) - 1, current_col + 1)
+                        highlight_item(current_row, current_col)
                     elif detect_swipe_up(position_history):
                         gesture_detected = "Swipe Up"
-                        menu_canvas.yview_scroll(-1, "units")
+                        current_row = max(0, current_row - 1)
+                        highlight_item(current_row, current_col)
                     elif detect_swipe_down(position_history):
                         gesture_detected = "Swipe Down"
-                        menu_canvas.yview_scroll(1, "units")
+                        current_row = min(len(menu_items) - 1, current_row + 1)
+                        highlight_item(current_row, current_col)
                     else:
                         gesture_detected = "Open Palm"
 

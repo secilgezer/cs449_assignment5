@@ -2,56 +2,200 @@ import cv2
 import mediapipe as mp
 import numpy as np
 from collections import deque
-import time  # Yeni eklenen import
+import tkinter as tk
+from tkinter import ttk
+from PIL import Image, ImageTk
+import threading
+import time
+import os
 
-# MediaPipe ayarları
+# Suppress Mediapipe warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+# MediaPipe settings
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
 mp_drawing = mp.solutions.drawing_utils
 
-# Hareket geçmişi
-position_history = deque(maxlen=10)  # Son 10 el konumunu tutar
+# Gesture history
+position_history = deque(maxlen=10)  # Keep the last 10 hand positions
 
-# Gesture süre kontrolü için değişkenler
+# Tkinter window
+root = tk.Tk()
+root.attributes("-fullscreen", True)
+root.title("Gesture Control Interface")
+
+# Main container
+main_container = tk.Frame(root)
+main_container.pack(fill=tk.BOTH, expand=True)
+
+# Left panel (camera feed for hand detection)
+left_panel = tk.Frame(main_container)
+left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+# Canvas for the camera feed
+canvas = tk.Canvas(left_panel, bg='black')
+canvas.pack(fill=tk.BOTH, expand=True)
+
+# Right panel (menu items displayed like a PC screen)
+right_panel = tk.Frame(main_container, bg='#1E1E1E', width=600)
+right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, padx=10, pady=10)
+
+# Menu title
+menu_label = tk.Label(right_panel, text="Menu", font=('Arial', 14, 'bold'), bg='#1E1E1E', fg='white')
+menu_label.pack(pady=10)
+
+# Create a frame for the canvas and scrollbar
+menu_frame = tk.Frame(right_panel, bg='#1E1E1E')
+menu_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+
+# Create a canvas within the menu frame
+menu_canvas = tk.Canvas(menu_frame, bg='#1E1E1E')
+menu_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+# Add a scrollbar
+menu_scrollbar = ttk.Scrollbar(menu_frame, orient=tk.VERTICAL, command=menu_canvas.yview)
+menu_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+# Configure the canvas to use the scrollbar
+menu_canvas.configure(yscrollcommand=menu_scrollbar.set)
+
+# Inner frame to hold menu items
+inner_menu_frame = tk.Frame(menu_canvas, bg='#1E1E1E')
+menu_canvas.create_window((0, 0), window=inner_menu_frame, anchor='nw')
+
+# Menu items
+menu_items = []
+menu_texts = [f"Item {i+1}" for i in range(30)]  # 30 items
+
+# Place menu items in 2 columns
+for row in range(0, len(menu_texts), 2):
+    column_items = []
+    for col in range(2):
+        if row + col < len(menu_texts):
+            btn = tk.Label(inner_menu_frame, text=menu_texts[row + col], font=('Arial', 12),
+                           bg='#2C2C2C', fg='white', pady=10, padx=20)
+            btn.grid(row=row//2, column=col, padx=2, pady=2, sticky='ew')
+            column_items.append(btn)
+    menu_items.append(column_items)
+
+# Update scroll region
+inner_menu_frame.update_idletasks()
+menu_canvas.config(scrollregion=menu_canvas.bbox("all"))
+
+# Make columns equally wide
+inner_menu_frame.grid_columnconfigure(0, weight=1)
+inner_menu_frame.grid_columnconfigure(1, weight=1)
+
+# Gesture information
+gesture_label = tk.Label(right_panel, text="No Gesture", font=('Arial', 12),
+                         bg='#1E1E1E', fg='white', wraplength=180)
+gesture_label.pack(pady=20)
+
+# Pointer widget
+pointer = tk.Label(right_panel, text="►", font=('Arial', 18), fg='red', bg='#1E1E1E')
+pointer.place(x=0, y=0)
+
+# Variables to hold the last detected gesture
+last_gesture = "No Gesture"
 last_gesture_time = 0
-last_gesture = ""
-gesture_duration = 1.0  # 1 saniye
+gesture_display_duration = 1.0  # 1 second to display the gesture
+last_selection_time = 0
+selection_cooldown = 1.0  # 1 second cooldown for selecting an item
 
-# Gesture kontrol fonksiyonları
+# Current selection tracking
+current_row = 0
+current_col = 0
+
+# Highlight selected menu item
+def highlight_item(row, col):
+    """Highlight the selected menu item"""
+    for i, column in enumerate(menu_items):
+        for j, item in enumerate(column):
+            if i == row and j == col:
+                item.configure(bg='#0078D4')
+
+                # Scroll to the selected item
+                item_y = item.winfo_y()
+                menu_canvas.yview_moveto(item_y / inner_menu_frame.winfo_height())
+            else:
+                item.configure(bg='#2C2C2C')
+
+# Select a menu item
+def select_item(row, col):
+    """Perform the click action on the selected menu item and provide visual feedback."""
+    try:
+        selected_item = menu_items[row][col]
+        print(f"Selected: {selected_item.cget('text')}")
+
+        # Highlight the clicked item in green
+        selected_item.configure(bg='green')
+        root.after(900, lambda: selected_item.configure(bg='#0078D4'))  # Revert to the original color after 900ms
+
+        # Display "Clicked" feedback
+        feedback_label = tk.Label(root, text="Clicked!", font=('Arial', 20, 'bold'),
+                                  bg='black', fg='white')
+        feedback_label.place(relx=0.5, rely=0.5, anchor=tk.CENTER)  # Center of the window
+
+        # Remove the feedback after 1 second
+        root.after(1000, feedback_label.destroy)
+    except IndexError:
+        print("Invalid selection")
+
+# Gesture detection functions (same as before)
+def detect_pointing_up(landmarks):
+    index_tip = landmarks[8]
+    index_mcp = landmarks[5]
+    middle_tip = landmarks[12]
+    ring_tip = landmarks[16]
+    pinky_tip = landmarks[20]
+
+    # Ensure index finger is pointing up (tip higher than base)
+    is_index_up = index_tip.y < index_mcp.y
+
+    # Other fingers should be curled down
+    other_fingers_down = (
+        middle_tip.y > landmarks[9].y and
+        ring_tip.y > landmarks[13].y and
+        pinky_tip.y > landmarks[17].y
+    )
+
+    return is_index_up and other_fingers_down
+
+def detect_pointing_down(landmarks):
+    index_tip = landmarks[8]
+    index_mcp = landmarks[5]
+    middle_tip = landmarks[12]
+    ring_tip = landmarks[16]
+    pinky_tip = landmarks[20]
+
+    # Ensure index finger is pointing down (tip lower than base)
+    is_index_down = index_tip.y > index_mcp.y
+
+    # Other fingers should be curled down
+    other_fingers_down = (
+        middle_tip.y > landmarks[9].y and
+        ring_tip.y > landmarks[13].y and
+        pinky_tip.y > landmarks[17].y
+    )
+
+    return is_index_down and other_fingers_down
+
 def detect_swipe_left(history):
     if len(history) < 2:
         return False
     x1, _ = history[0]
     x2, _ = history[-1]
-    return x2 < x1 - 0.2  # Sağdan sola hareketi algıla
-
+    return x2 < x1 - 0.2
 
 def detect_swipe_right(history):
     if len(history) < 2:
         return False
     x1, _ = history[0]
     x2, _ = history[-1]
-    return x2 > x1 + 0.2  # Soldan sağa hareketi algıla
-
-
-def detect_swipe_up(history):
-    if len(history) < 2:
-        return False
-    _, y1 = history[0]
-    _, y2 = history[-1]
-    return y2 < y1 - 0.2  # Aşağıdan yukarıya hareketi algıla
-
-
-def detect_swipe_down(history):
-    if len(history) < 2:
-        return False
-    _, y1 = history[0]
-    _, y2 = history[-1]
-    return y2 > y1 + 0.2  # Yukarıdan aşağıya hareketi algıla
-
+    return x2 > x1 + 0.2
 
 def detect_thumbs_up(landmarks):
-    """Thumbs Up jestini algıla (sadece başparmak yukarıda, diğer parmaklar aşağıda)"""
     thumb_tip = landmarks[4]
     thumb_ip = landmarks[3]
     index_tip = landmarks[8]
@@ -59,90 +203,95 @@ def detect_thumbs_up(landmarks):
     ring_tip = landmarks[16]
     pinky_tip = landmarks[20]
 
-    # Thumb up kontrolü: Başparmak yukarıda, diğer parmaklar aşağıda
-    is_thumb_up = thumb_tip.y < thumb_ip.y  # Başparmak yukarıda
+    is_thumb_up = thumb_tip.y < thumb_ip.y
     are_other_fingers_down = (
-            index_tip.y > landmarks[6].y and
-            middle_tip.y > landmarks[10].y and
-            ring_tip.y > landmarks[14].y and
-            pinky_tip.y > landmarks[18].y
+        index_tip.y > landmarks[6].y and
+        middle_tip.y > landmarks[10].y and
+        ring_tip.y > landmarks[14].y and
+        pinky_tip.y > landmarks[18].y
     )
     return is_thumb_up and are_other_fingers_down
 
-
-def detect_open_palm(landmarks):
-    """Elin tamamen açık olup olmadığını kontrol et"""
-    fingers_tips = [landmarks[8], landmarks[12], landmarks[16], landmarks[20]]
-    fingers_mcp = [landmarks[5], landmarks[9], landmarks[13], landmarks[17]]
-    return all(tip.y < mcp.y for tip, mcp in zip(fingers_tips, fingers_mcp))  # Parmakların açık olması
-
-
-# Video başlat
+# Video capture settings
 cap = cv2.VideoCapture(0)
 
-while cap.isOpened():
+def update_pointer_position(x, y):
+    """Update the pointer position on the menu canvas"""
+    pointer.place(x=x, y=y)
+
+def update_frame():
+    """Update the camera feed and detect gestures"""
+    global current_row, current_col, last_gesture, last_gesture_time, last_selection_time
     success, image = cap.read()
-    if not success:
-        print("Kamera çerçevesi boş.")
-        continue
+    if success:
+        image = cv2.flip(image, 1)
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = hands.process(image_rgb)
 
-    image = cv2.flip(image, 1)  # Görüntüyü yatay çevir (ayna efekti)
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    results = hands.process(image_rgb)
+        if results.multi_hand_landmarks:
+            for hand_landmarks in results.multi_hand_landmarks:
+                mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-    current_time = time.time()
+                landmarks = hand_landmarks.landmark
+                index_finger = landmarks[8]
+                position_history.append((index_finger.x, index_finger.y))
 
-    if results.multi_hand_landmarks:
-        for hand_landmarks in results.multi_hand_landmarks:
-            mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+                gesture_detected = "No Gesture"
 
-            landmarks = hand_landmarks.landmark
-            index_finger = landmarks[8]  # İşaret parmağı
-            position_history.append((index_finger.x, index_finger.y))  # El konumunu güncelle
-
-            gesture_detected = "No Gesture"
-
-            if detect_thumbs_up(landmarks):
-                gesture_detected = "Thumbs Up"
-            elif detect_open_palm(landmarks):
-                if detect_swipe_left(position_history):
-                    if last_gesture != "Swipe Left" or (current_time - last_gesture_time) > gesture_duration:
-                        last_gesture = "Swipe Left"
-                        last_gesture_time = current_time
-                    gesture_detected = last_gesture
+                if detect_pointing_up(landmarks):
+                    gesture_detected = "Pointing Up"
+                    current_row = max(0, current_row - 1)
+                    highlight_item(current_row, current_col)
+                elif detect_pointing_down(landmarks):
+                    gesture_detected = "Pointing Down"
+                    current_row = min(len(menu_items) - 1, current_row + 1)
+                    highlight_item(current_row, current_col)
+                elif detect_thumbs_up(landmarks):
+                    gesture_detected = "Thumbs Up"
+                    current_time = time.time()
+                    if current_time - last_selection_time > selection_cooldown:
+                        select_item(current_row, current_col)
+                        last_selection_time = current_time
+                elif detect_swipe_left(position_history):
+                    gesture_detected = "Swipe Left"
+                    current_col = max(0, current_col - 1)
+                    highlight_item(current_row, current_col)
                 elif detect_swipe_right(position_history):
-                    if last_gesture != "Swipe Right" or (current_time - last_gesture_time) > gesture_duration:
-                        last_gesture = "Swipe Right"
-                        last_gesture_time = current_time
-                    gesture_detected = last_gesture
-                elif detect_swipe_up(position_history):
-                    if last_gesture != "Swipe Up" or (current_time - last_gesture_time) > gesture_duration:
-                        last_gesture = "Swipe Up"
-                        last_gesture_time = current_time
-                    gesture_detected = last_gesture
-                elif detect_swipe_down(position_history):
-                    if last_gesture != "Swipe Down" or (current_time - last_gesture_time) > gesture_duration:
-                        last_gesture = "Swipe Down"
-                        last_gesture_time = current_time
-                    gesture_detected = last_gesture
-                elif (current_time - last_gesture_time) > gesture_duration:
-                    gesture_detected = "Open Palm"
-                else:
-                    gesture_detected = last_gesture
+                    gesture_detected = "Swipe Right"
+                    current_col = min(1, current_col + 1)
+                    highlight_item(current_row, current_col)
 
-            # Jest adını ekrana yazdır
-            cv2.putText(image, f'Gesture: {gesture_detected}', (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                if gesture_detected != "No Gesture":
+                    last_gesture = gesture_detected
+                    last_gesture_time = time.time()
 
-    # Debug bilgisi ekle
-    if results.multi_hand_landmarks:
-        cv2.putText(image, "Hand Detected", (10, 80),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                # Update pointer position based on hand index finger position
+                image_height, image_width, _ = image.shape
+                pointer_x = int(index_finger.x * right_panel.winfo_width())
+                pointer_y = int(index_finger.y * right_panel.winfo_height())
+                update_pointer_position(pointer_x, pointer_y)
 
-    # Görüntüyü göster
-    cv2.imshow('Hand Gesture Recognition', image)
+        # Maintain gesture display for 1 second
+        if time.time() - last_gesture_time < gesture_display_duration:
+            gesture_label.config(text=f"Detected: {last_gesture}")
+        else:
+            gesture_label.config(text="No Gesture")
 
-    if cv2.waitKey(5) & 0xFF == 27:  # ESC tuşuna basıldığında çık
-        break
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = Image.fromarray(image)
+        photo = ImageTk.PhotoImage(image=image)
+        canvas.create_image(0, 0, image=photo, anchor=tk.NW)
+        canvas.photo = photo
 
-cap.release()
-cv2.destroyAllWindows()
+    root.after(10, update_frame)
+
+# Highlight the first item and start the update loop
+highlight_item(current_row, current_col)
+update_frame()
+
+def on_closing():
+    cap.release()
+    root.destroy()
+
+root.protocol("WM_DELETE_WINDOW", on_closing)
+root.mainloop()

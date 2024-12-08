@@ -79,7 +79,10 @@ gesture_label = tk.Label(right_panel, text="No Gesture", font=('Arial', 12),
                         bg='#1E1E1E', fg='white', wraplength=180)
 gesture_label.pack(pady=20)
 
-# Cooldown variables
+# Variables to hold the last detected gesture
+last_gesture = "No Gesture"
+last_gesture_time = 0
+gesture_display_duration = 1.0  # 1 second to display the gesture
 last_selection_time = 0
 selection_cooldown = 1.0  # 1 second cooldown for selecting an item
 
@@ -166,47 +169,18 @@ def detect_open_palm(landmarks):
 
 # Video capture settings
 cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
-
-frame_skip = 3  # Process every 3rd frame
-frame_count = 0
-
-# Gesture detection threading
-gesture_thread_lock = threading.Lock()
-gesture_results = None
-last_detection_time = 0
-detection_interval = 0.2  # Process gestures every 200ms
-
-def process_gesture(image_rgb):
-    """Process gesture in a separate thread"""
-    global gesture_results
-    results = hands.process(image_rgb)
-    with gesture_thread_lock:
-        gesture_results = results
 
 def update_frame():
     """Update the camera feed and detect gestures"""
-    global current_row, current_col, frame_count, gesture_results, last_detection_time, last_selection_time
+    global current_row, current_col, last_gesture, last_gesture_time, last_selection_time
     success, image = cap.read()
     if success:
-        frame_count += 1
-        if frame_count % frame_skip != 0:  # Skip frames to reduce lag
-            root.after(10, update_frame)
-            return
-
         image = cv2.flip(image, 1)
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = hands.process(image_rgb)
 
-        # Start gesture detection in a separate thread every 200ms
-        if time.time() - last_detection_time > detection_interval:
-            threading.Thread(target=process_gesture, args=(image_rgb,)).start()
-            last_detection_time = time.time()
-
-        # Draw results if available
-        with gesture_thread_lock:
-            if gesture_results and gesture_results.multi_hand_landmarks:
-                hand_landmarks = gesture_results.multi_hand_landmarks[0]
+        if results.multi_hand_landmarks:
+            for hand_landmarks in results.multi_hand_landmarks:
                 mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
                 landmarks = hand_landmarks.landmark
@@ -215,13 +189,12 @@ def update_frame():
 
                 gesture_detected = "No Gesture"
 
-                # Handle "Thumbs Up" gesture with cooldown
                 if detect_thumbs_up(landmarks):
+                    gesture_detected = "Thumbs Up"
                     current_time = time.time()
                     if current_time - last_selection_time > selection_cooldown:
-                        gesture_detected = "Thumbs Up"
-                        select_item(current_row, current_col)  # Trigger item selection
-                        last_selection_time = current_time  # Reset cooldown timer
+                        select_item(current_row, current_col)
+                        last_selection_time = current_time
                 elif detect_open_palm(landmarks):
                     if detect_swipe_left(position_history):
                         gesture_detected = "Swipe Left"
@@ -242,33 +215,33 @@ def update_frame():
                     else:
                         gesture_detected = "Open Palm"
 
-                gesture_label.config(text=f"Detected: {gesture_detected}")
-                cv2.putText(image, f'Gesture: {gesture_detected}', (10, 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                if gesture_detected != "No Gesture":
+                    last_gesture = gesture_detected
+                    last_gesture_time = time.time()
 
-        # Update canvas
+        # Maintain gesture display for 1 second
+        if time.time() - last_gesture_time < gesture_display_duration:
+            gesture_label.config(text=f"Detected: {last_gesture}")
+            cv2.putText(image, f'Gesture: {last_gesture}', (10, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        else:
+            gesture_label.config(text="No Gesture")
+
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = Image.fromarray(image)
-        canvas_width = canvas.winfo_width()
-        canvas_height = canvas.winfo_height()
-        if canvas_width > 0 and canvas_height > 0:
-            image = image.resize((canvas_width, canvas_height))
-            photo = ImageTk.PhotoImage(image=image)
-            canvas.create_image(0, 0, image=photo, anchor=tk.NW)
-            canvas.photo = photo
+        photo = ImageTk.PhotoImage(image=image)
+        canvas.create_image(0, 0, image=photo, anchor=tk.NW)
+        canvas.photo = photo
 
-    root.after(50, update_frame)  # Update every 50ms
+    root.after(10, update_frame)
 
 # Highlight the first item and start the update loop
 highlight_item(current_row, current_col)
 update_frame()
 
-# Cleanup on window close
 def on_closing():
     cap.release()
     root.destroy()
 
 root.protocol("WM_DELETE_WINDOW", on_closing)
-
-# Run the main loop
 root.mainloop()

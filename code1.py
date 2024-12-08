@@ -2,149 +2,56 @@ import cv2
 import mediapipe as mp
 import numpy as np
 from collections import deque
-import tkinter as tk
-from PIL import Image, ImageTk
-import threading
-import time
-import os
+import time  # Yeni eklenen import
 
-# Suppress Mediapipe warnings
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-# MediaPipe settings
+# MediaPipe ayarları
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
 mp_drawing = mp.solutions.drawing_utils
 
-# Gesture history
-position_history = deque(maxlen=10)  # Keep the last 10 hand positions
+# Hareket geçmişi
+position_history = deque(maxlen=10)  # Son 10 el konumunu tutar
 
-# Tkinter window
-root = tk.Tk()
-root.title("Gesture Menu")
-
-# Main container
-main_container = tk.Frame(root)
-main_container.pack(fill=tk.BOTH, expand=True)
-
-# Left panel (camera feed)
-left_panel = tk.Frame(main_container)
-left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-# Canvas for the camera feed
-canvas = tk.Canvas(left_panel, bg='black')
-canvas.pack(fill=tk.BOTH, expand=True)
-
-# Right panel (menu)
-right_panel = tk.Frame(main_container, bg='#1E1E1E', width=250)
-right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, padx=10, pady=10)
-
-# Menu title
-menu_label = tk.Label(right_panel, text="Menu", font=('Arial', 14, 'bold'), bg='#1E1E1E', fg='white')
-menu_label.pack(pady=10)
-
-# Grid frame for menu items
-menu_frame = tk.Frame(right_panel, bg='#1E1E1E')
-menu_frame.pack(fill=tk.X, pady=10)
-
-# Menu items
-menu_items = []
-menu_texts = [
-    ["Item 1", "Item 2"],
-    ["Item 3", "Item 4"],
-    ["Item 5", "Item 6"],
-    ["Item 7", "Item 8"],
-    ["Item 9", "Item 10"],
-    ["Item 11", "Item 12"]
-]
-current_row = 0
-current_col = 0
-
-# Place menu items in a grid
-for i, row in enumerate(menu_texts):
-    row_items = []
-    for j, text in enumerate(row):
-        btn = tk.Label(menu_frame, text=text, font=('Arial', 12),
-                      bg='#2C2C2C', fg='white', pady=10, padx=20)
-        btn.grid(row=i, column=j, padx=2, pady=2, sticky='ew')
-        row_items.append(btn)
-    menu_items.append(row_items)
-
-# Make columns equally wide
-menu_frame.grid_columnconfigure(0, weight=1)
-menu_frame.grid_columnconfigure(1, weight=1)
-
-# Gesture information
-gesture_label = tk.Label(right_panel, text="No Gesture", font=('Arial', 12),
-                        bg='#1E1E1E', fg='white', wraplength=180)
-gesture_label.pack(pady=20)
-
-# Variables to hold the last detected gesture
-last_gesture = "No Gesture"
+# Gesture süre kontrolü için değişkenler
 last_gesture_time = 0
-gesture_display_duration = 1.0  # 1 second to display the gesture
-last_selection_time = 0
-selection_cooldown = 1.0  # 1 second cooldown for selecting an item
+last_gesture = ""
+gesture_duration = 1.0  # 1 saniye
 
-# Highlight selected menu item
-def highlight_item(row, col):
-    """Highlight the selected menu item"""
-    for i, row_items in enumerate(menu_items):
-        for j, item in enumerate(row_items):
-            if i == row and j == col:
-                item.configure(bg='#0078D4')
-            else:
-                item.configure(bg='#2C2C2C')
-
-# Select a menu item
-def select_item(row, col):
-    """Perform the click action on the selected menu item and provide visual feedback."""
-    selected_item = menu_items[row][col]
-    print(f"Selected: {selected_item.cget('text')}")
-
-    # Highlight the clicked item in green
-    selected_item.configure(bg='green')
-    root.after(900, lambda: selected_item.configure(bg='#0078D4'))  # Revert to the original color after 900ms
-
-    # Display "Clicked" feedback
-    feedback_label = tk.Label(root, text="Clicked!", font=('Arial', 20, 'bold'),
-                              bg='black', fg='white')
-    feedback_label.place(relx=0.5, rely=0.5, anchor=tk.CENTER)  # Center of the window
-
-    # Remove the feedback after 1 second
-    root.after(1000, feedback_label.destroy)
-
-# Gesture detection functions
+# Gesture kontrol fonksiyonları
 def detect_swipe_left(history):
     if len(history) < 2:
         return False
     x1, _ = history[0]
     x2, _ = history[-1]
-    return x2 < x1 - 0.2
+    return x2 < x1 - 0.2  # Sağdan sola hareketi algıla
+
 
 def detect_swipe_right(history):
     if len(history) < 2:
         return False
     x1, _ = history[0]
     x2, _ = history[-1]
-    return x2 > x1 + 0.2
+    return x2 > x1 + 0.2  # Soldan sağa hareketi algıla
+
 
 def detect_swipe_up(history):
     if len(history) < 2:
         return False
     _, y1 = history[0]
     _, y2 = history[-1]
-    return y2 < y1 - 0.2
+    return y2 < y1 - 0.2  # Aşağıdan yukarıya hareketi algıla
+
 
 def detect_swipe_down(history):
     if len(history) < 2:
         return False
     _, y1 = history[0]
     _, y2 = history[-1]
-    return y2 > y1 + 0.2
+    return y2 > y1 + 0.2  # Yukarıdan aşağıya hareketi algıla
+
 
 def detect_thumbs_up(landmarks):
-    """Detect Thumbs Up gesture"""
+    """Thumbs Up jestini algıla (sadece başparmak yukarıda, diğer parmaklar aşağıda)"""
     thumb_tip = landmarks[4]
     thumb_ip = landmarks[3]
     index_tip = landmarks[8]
@@ -152,7 +59,8 @@ def detect_thumbs_up(landmarks):
     ring_tip = landmarks[16]
     pinky_tip = landmarks[20]
 
-    is_thumb_up = thumb_tip.y < thumb_ip.y
+    # Thumb up kontrolü: Başparmak yukarıda, diğer parmaklar aşağıda
+    is_thumb_up = thumb_tip.y < thumb_ip.y  # Başparmak yukarıda
     are_other_fingers_down = (
             index_tip.y > landmarks[6].y and
             middle_tip.y > landmarks[10].y and
@@ -161,87 +69,80 @@ def detect_thumbs_up(landmarks):
     )
     return is_thumb_up and are_other_fingers_down
 
+
 def detect_open_palm(landmarks):
-    """Check if the hand is fully open."""
+    """Elin tamamen açık olup olmadığını kontrol et"""
     fingers_tips = [landmarks[8], landmarks[12], landmarks[16], landmarks[20]]
     fingers_mcp = [landmarks[5], landmarks[9], landmarks[13], landmarks[17]]
-    return all(tip.y < mcp.y for tip, mcp in zip(fingers_tips, fingers_mcp))
+    return all(tip.y < mcp.y for tip, mcp in zip(fingers_tips, fingers_mcp))  # Parmakların açık olması
 
-# Video capture settings
+
+# Video başlat
 cap = cv2.VideoCapture(0)
 
-def update_frame():
-    """Update the camera feed and detect gestures"""
-    global current_row, current_col, last_gesture, last_gesture_time, last_selection_time
+while cap.isOpened():
     success, image = cap.read()
-    if success:
-        image = cv2.flip(image, 1)
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        results = hands.process(image_rgb)
+    if not success:
+        print("Kamera çerçevesi boş.")
+        continue
 
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+    image = cv2.flip(image, 1)  # Görüntüyü yatay çevir (ayna efekti)
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    results = hands.process(image_rgb)
 
-                landmarks = hand_landmarks.landmark
-                index_finger = landmarks[8]
-                position_history.append((index_finger.x, index_finger.y))
+    current_time = time.time()
 
-                gesture_detected = "No Gesture"
+    if results.multi_hand_landmarks:
+        for hand_landmarks in results.multi_hand_landmarks:
+            mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-                if detect_thumbs_up(landmarks):
-                    gesture_detected = "Thumbs Up"
-                    current_time = time.time()
-                    if current_time - last_selection_time > selection_cooldown:
-                        select_item(current_row, current_col)
-                        last_selection_time = current_time
-                elif detect_open_palm(landmarks):
-                    if detect_swipe_left(position_history):
-                        gesture_detected = "Swipe Left"
-                        current_col = max(0, current_col - 1)
-                        highlight_item(current_row, current_col)
-                    elif detect_swipe_right(position_history):
-                        gesture_detected = "Swipe Right"
-                        current_col = min(len(menu_items[0]) - 1, current_col + 1)
-                        highlight_item(current_row, current_col)
-                    elif detect_swipe_up(position_history):
-                        gesture_detected = "Swipe Up"
-                        current_row = max(0, current_row - 1)
-                        highlight_item(current_row, current_col)
-                    elif detect_swipe_down(position_history):
-                        gesture_detected = "Swipe Down"
-                        current_row = min(len(menu_items) - 1, current_row + 1)
-                        highlight_item(current_row, current_col)
-                    else:
-                        gesture_detected = "Open Palm"
+            landmarks = hand_landmarks.landmark
+            index_finger = landmarks[8]  # İşaret parmağı
+            position_history.append((index_finger.x, index_finger.y))  # El konumunu güncelle
 
-                if gesture_detected != "No Gesture":
-                    last_gesture = gesture_detected
-                    last_gesture_time = time.time()
+            gesture_detected = "No Gesture"
 
-        # Maintain gesture display for 1 second
-        if time.time() - last_gesture_time < gesture_display_duration:
-            gesture_label.config(text=f"Detected: {last_gesture}")
-            cv2.putText(image, f'Gesture: {last_gesture}', (10, 50),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        else:
-            gesture_label.config(text="No Gesture")
+            if detect_thumbs_up(landmarks):
+                gesture_detected = "Thumbs Up"
+            elif detect_open_palm(landmarks):
+                if detect_swipe_left(position_history):
+                    if last_gesture != "Swipe Left" or (current_time - last_gesture_time) > gesture_duration:
+                        last_gesture = "Swipe Left"
+                        last_gesture_time = current_time
+                    gesture_detected = last_gesture
+                elif detect_swipe_right(position_history):
+                    if last_gesture != "Swipe Right" or (current_time - last_gesture_time) > gesture_duration:
+                        last_gesture = "Swipe Right"
+                        last_gesture_time = current_time
+                    gesture_detected = last_gesture
+                elif detect_swipe_up(position_history):
+                    if last_gesture != "Swipe Up" or (current_time - last_gesture_time) > gesture_duration:
+                        last_gesture = "Swipe Up"
+                        last_gesture_time = current_time
+                    gesture_detected = last_gesture
+                elif detect_swipe_down(position_history):
+                    if last_gesture != "Swipe Down" or (current_time - last_gesture_time) > gesture_duration:
+                        last_gesture = "Swipe Down"
+                        last_gesture_time = current_time
+                    gesture_detected = last_gesture
+                elif (current_time - last_gesture_time) > gesture_duration:
+                    gesture_detected = "Open Palm"
+                else:
+                    gesture_detected = last_gesture
 
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = Image.fromarray(image)
-        photo = ImageTk.PhotoImage(image=image)
-        canvas.create_image(0, 0, image=photo, anchor=tk.NW)
-        canvas.photo = photo
+            # Jest adını ekrana yazdır
+            cv2.putText(image, f'Gesture: {gesture_detected}', (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-    root.after(10, update_frame)
+    # Debug bilgisi ekle
+    if results.multi_hand_landmarks:
+        cv2.putText(image, "Hand Detected", (10, 80),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
-# Highlight the first item and start the update loop
-highlight_item(current_row, current_col)
-update_frame()
+    # Görüntüyü göster
+    cv2.imshow('Hand Gesture Recognition', image)
 
-def on_closing():
-    cap.release()
-    root.destroy()
+    if cv2.waitKey(5) & 0xFF == 27:  # ESC tuşuna basıldığında çık
+        break
 
-root.protocol("WM_DELETE_WINDOW", on_closing)
-root.mainloop()
+cap.release()
+cv2.destroyAllWindows()

@@ -2,6 +2,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 from collections import deque
+import time  # Yeni eklenen import
 
 # MediaPipe ayarları
 mp_hands = mp.solutions.hands
@@ -11,6 +12,10 @@ mp_drawing = mp.solutions.drawing_utils
 # Hareket geçmişi
 position_history = deque(maxlen=10)  # Son 10 el konumunu tutar
 
+# Gesture süre kontrolü için değişkenler
+last_gesture_time = 0
+last_gesture = ""
+gesture_duration = 1.0  # 1 saniye
 
 # Gesture kontrol fonksiyonları
 def detect_swipe_left(history):
@@ -85,6 +90,8 @@ while cap.isOpened():
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     results = hands.process(image_rgb)
 
+    current_time = time.time()
+
     if results.multi_hand_landmarks:
         for hand_landmarks in results.multi_hand_landmarks:
             mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
@@ -99,18 +106,37 @@ while cap.isOpened():
                 gesture_detected = "Thumbs Up"
             elif detect_open_palm(landmarks):
                 if detect_swipe_left(position_history):
-                    gesture_detected = "Swipe Left"
+                    if last_gesture != "Swipe Left" or (current_time - last_gesture_time) > gesture_duration:
+                        last_gesture = "Swipe Left"
+                        last_gesture_time = current_time
+                    gesture_detected = last_gesture
                 elif detect_swipe_right(position_history):
-                    gesture_detected = "Swipe Right"
+                    if last_gesture != "Swipe Right" or (current_time - last_gesture_time) > gesture_duration:
+                        last_gesture = "Swipe Right"
+                        last_gesture_time = current_time
+                    gesture_detected = last_gesture
                 elif detect_swipe_up(position_history):
-                    gesture_detected = "Swipe Up"
+                    if last_gesture != "Swipe Up" or (current_time - last_gesture_time) > gesture_duration:
+                        last_gesture = "Swipe Up"
+                        last_gesture_time = current_time
+                    gesture_detected = last_gesture
                 elif detect_swipe_down(position_history):
-                    gesture_detected = "Swipe Down"
-                else:
+                    if last_gesture != "Swipe Down" or (current_time - last_gesture_time) > gesture_duration:
+                        last_gesture = "Swipe Down"
+                        last_gesture_time = current_time
+                    gesture_detected = last_gesture
+                elif (current_time - last_gesture_time) > gesture_duration:
                     gesture_detected = "Open Palm"
+                else:
+                    gesture_detected = last_gesture
 
             # Jest adını ekrana yazdır
             cv2.putText(image, f'Gesture: {gesture_detected}', (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+    # Debug bilgisi ekle
+    if results.multi_hand_landmarks:
+        cv2.putText(image, "Hand Detected", (10, 80),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
     # Görüntüyü göster
     cv2.imshow('Hand Gesture Recognition', image)

@@ -218,6 +218,9 @@ cap = cv2.VideoCapture(0)
 def update_pointer_position(x, y):
     """Update the pointer position on the menu canvas"""
     pointer.place(x=x, y=y)
+    item = root.winfo_containing(x + right_panel.winfo_x(), y + right_panel.winfo_y())
+    if item and isinstance(item, tk.Label) and item.cget('bg') == '#0078D4':  # Ensure it's an item
+        select_item(current_row, current_col)
 
 def update_frame():
     """Update the camera feed and detect gestures"""
@@ -270,6 +273,11 @@ def update_frame():
                 pointer_x = int(index_finger.x * right_panel.winfo_width())
                 pointer_y = int(index_finger.y * right_panel.winfo_height())
                 update_pointer_position(pointer_x, pointer_y)
+                
+                # Check if pointer is over an item
+                item = root.winfo_containing(pointer_x + right_panel.winfo_x(), pointer_y + right_panel.winfo_y())
+                if item and isinstance(item, tk.Label) and item.cget('bg') == '#0078D4':
+                    select_item(current_row, current_col)
 
         # Maintain gesture display for 1 second
         if time.time() - last_gesture_time < gesture_display_duration:
@@ -285,7 +293,6 @@ def update_frame():
 
     root.after(10, update_frame)
 
-# Highlight the first item and start the update loop
 highlight_item(current_row, current_col)
 update_frame()
 

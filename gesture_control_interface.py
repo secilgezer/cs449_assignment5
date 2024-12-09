@@ -197,22 +197,10 @@ def detect_swipe_left(history):
     # The threshold of 0.2 determines the minimum distance for a "swipe" to be registered
 
 def detect_swipe_right(history):
-     """
-    Detects if the user's hand has made a swipe-right gesture.
-    Args:
-        history (deque): A deque containing the x, y positions of the index finger over time.
-    Returns:
-        bool: True if a swipe-right gesture is detected, False otherwise.
-    """
-    # If there are fewer than 2 points in the history, a swipe cannot be detected
     if len(history) < 2:
         return False
-    # Get the x-coordinate of the index finger from the first recorded position
     x1, _ = history[0]
-    # Get the x-coordinate of the index finger from the last recorded position
     x2, _ = history[-1]
-    # Check if the finger has moved significantly to the right (x2 is much greater than x1)
-    # The threshold of 0.2 determines the minimum distance for a "swipe" to be registered
     return x2 > x1 + 0.2
 
 def detect_thumbs_up(landmarks):

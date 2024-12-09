@@ -195,7 +195,6 @@ def detect_swipe_left(history):
     x2, _ = history[-1]   # Get the x-coordinate of the index finger from the last recorded position
     return x2 < x1 - 0.2    # Check if the finger has moved significantly to the left (x2 is much less than x1)
     # The threshold of 0.2 determines the minimum distance for a "swipe" to be registered
-
 def detect_swipe_right(history):
     if len(history) < 2:
         return False

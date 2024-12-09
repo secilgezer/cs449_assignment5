@@ -17,15 +17,15 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
 mp_drawing = mp.solutions.drawing_utils
 
-# Gesture history
+# Gesture history to track the last 10 positions of the index finger
 position_history = deque(maxlen=10)  # Keep the last 10 hand positions
 
 # Tkinter window
 root = tk.Tk()
-root.attributes("-fullscreen", True)
-root.title("Gesture Control Interface")
+root.attributes("-fullscreen", True) # Fullscreen mode
+root.title("Gesture Control Interface") # Window title
 
-# Main container
+# Main container to hold the left and right panels
 main_container = tk.Frame(root)
 main_container.pack(fill=tk.BOTH, expand=True)
 
@@ -202,8 +202,8 @@ def detect_thumbs_up(landmarks):
     middle_tip = landmarks[12]
     ring_tip = landmarks[16]
     pinky_tip = landmarks[20]
-
-    is_thumb_up = thumb_tip.y < thumb_ip.y
+   
+    is_thumb_up = thumb_tip.y < thumb_ip.y # Check if the thumb is up and other fingers are down
     are_other_fingers_down = (
         index_tip.y > landmarks[6].y and
         middle_tip.y > landmarks[10].y and
@@ -214,7 +214,7 @@ def detect_thumbs_up(landmarks):
 
 # Video capture settings
 cap = cv2.VideoCapture(0)
-
+# Function to update the position of the pointer widget on the menu canvas
 def update_pointer_position(x, y):
     """Update the pointer position on the menu canvas"""
     pointer.place(x=x, y=y)
